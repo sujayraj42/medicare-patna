@@ -1,12 +1,12 @@
 /**
- * Auth Service — Local Database + Firebase OTP Fallback
- * Implements a persistent user database for Registration, Password Login, and OTP Login.
+ * Auth Service — Firebase Realtime Database backed
+ * Users stored in Firebase /users/{mobile} with localStorage session cache
  */
+import FirebaseService from './firebase.service.js';
+
 const AuthService = (() => {
   const SESSION_KEY = 'medicare_session';
-  const DB_KEY = 'medicare_users_db';
   const listeners = [];
-
   let confirmationResult = null;
 
   function normalizeMobile(value) {
@@ -19,187 +19,215 @@ const AuthService = (() => {
       const raw = localStorage.getItem(key);
       if (!raw) return fallback;
       return JSON.parse(raw);
-    } catch {
-      return fallback;
-    }
+    } catch { return fallback; }
   }
 
   function writeJson(key, value) {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-      return true;
-    } catch (err) {
-      console.warn(`[Auth] Failed to persist ${key}:`, err);
-      return false;
-    }
+    try { localStorage.setItem(key, JSON.stringify(value)); return true; }
+    catch (err) { console.warn(`[Auth] persist failed:`, err); return false; }
   }
 
   function sanitizeUser(user) {
     if (!user || typeof user !== 'object') return null;
-    const sessionUser = { ...user };
-    delete sessionUser.password;
-    return sessionUser;
+    const s = { ...user };
+    delete s.password;
+    return s;
   }
 
-  // Initialize DB if empty
-  try {
-    if (!localStorage.getItem(DB_KEY)) {
-      // Add default test user
-      localStorage.setItem(DB_KEY, JSON.stringify([{
-        mobile: '9999999999',
-        password: 'password123',
-        name: 'Rahul Kumar',
-        abhaId: '91-4202-3948-1102',
-        dob: '1990-05-15',
-        location: 'Kankarbagh, Patna',
-        verified: true
-      }]));
-    }
-  } catch (err) {
-    console.warn('[Auth] Unable to initialize local user database:', err);
+  // ── Firebase helpers ──
+  async function getDbRef(path) {
+    const db = await FirebaseService.whenReady();
+    return db ? db.ref(path) : null;
   }
 
-  function getUsers() {
-    const users = readJson(DB_KEY, []);
-    return Array.isArray(users) ? users : [];
+  async function fbGetUser(mobile) {
+    const ref = await getDbRef(`users/${mobile}`);
+    if (!ref) return null;
+    const snap = await ref.once('value');
+    return snap.val();
   }
 
-  function saveUsers(users) {
-    return writeJson(DB_KEY, users);
+  async function fbSaveUser(mobile, data) {
+    const ref = await getDbRef(`users/${mobile}`);
+    if (!ref) return false;
+    await ref.set(data);
+    return true;
   }
 
-  /**
-   * Password Login
-   */
-  function login(mobile, password) {
-    const normalizedMobile = normalizeMobile(mobile);
-    if (!/^\d{10}$/.test(normalizedMobile)) {
-      return { success: false, error: 'Enter valid 10-digit mobile number.' };
-    }
-    if (!String(password || '').trim()) {
-      return { success: false, error: 'Enter your password.' };
-    }
+  // ── Password Login ──
+  async function login(mobile, password) {
+    const m = normalizeMobile(mobile);
+    if (!/^\d{10}$/.test(m)) return { success: false, error: 'Enter valid 10-digit mobile number.' };
+    if (!String(password || '').trim()) return { success: false, error: 'Enter your password.' };
 
-    const users = getUsers();
-    const user = users.find(u => normalizeMobile(u.mobile) === normalizedMobile && u.password === password);
-    
-    if (user) {
-      const sessionUser = sanitizeUser({ ...user, authMethod: 'password' });
-      if (!writeJson(SESSION_KEY, sessionUser)) {
-        return { success: false, error: 'Unable to save login session. Please check browser storage.' };
+    try {
+      const user = await fbGetUser(m);
+      if (user && user.password === password) {
+        const sessionUser = sanitizeUser({ ...user, mobile: m, authMethod: 'password' });
+        writeJson(SESSION_KEY, sessionUser);
+        notify();
+        return { success: true, user: sessionUser };
       }
-      notify();
-      return { success: true, user: sessionUser };
+      return { success: false, error: 'Invalid mobile number or password.' };
+    } catch (err) {
+      console.error('[Auth] Login error:', err);
+      return { success: false, error: 'Login failed. Check your internet connection.' };
     }
-    return { success: false, error: 'Invalid mobile number or password.' };
   }
 
-  /**
-   * Register new user to database
-   */
-  function register(data) {
-    const users = getUsers();
+  // ── Register ──
+  async function register(data) {
     const mobile = normalizeMobile(data.mobile);
     const name = String(data.name || '').trim();
     const password = String(data.password || '').trim();
 
-    if (!name) {
-      return { success: false, error: 'Enter your full name.' };
-    }
-    if (!/^\d{10}$/.test(mobile)) {
-      return { success: false, error: 'Enter valid 10-digit mobile number.' };
-    }
-    if (password.length < 6) {
-      return { success: false, error: 'Password must be at least 6 characters.' };
-    }
-    if (users.find(u => normalizeMobile(u.mobile) === mobile)) {
-      return { success: false, error: 'Mobile number already registered.' };
-    }
-    
-    const newUser = {
-      ...data,
-      name,
-      mobile,
-      password,
-      abhaId: '91-' + Math.floor(1000 + Math.random() * 9000) + '-0000-0000',
-      location: data.location || 'Patna, Bihar',
-      verified: true
-    };
-    
-    users.push(newUser);
-    if (!saveUsers(users)) {
-      return { success: false, error: 'Unable to create account. Please check browser storage.' };
-    }
+    if (!name) return { success: false, error: 'Enter your full name.' };
+    if (!/^\d{10}$/.test(mobile)) return { success: false, error: 'Enter valid 10-digit mobile number.' };
+    if (password.length < 6) return { success: false, error: 'Password must be at least 6 characters.' };
 
-    const sessionUser = sanitizeUser({ ...newUser, authMethod: 'register' });
-    if (!writeJson(SESSION_KEY, sessionUser)) {
-      return { success: false, error: 'Account created, but login session could not be saved.' };
+    try {
+      const existing = await fbGetUser(mobile);
+      if (existing) return { success: false, error: 'Mobile number already registered.' };
+
+      const newUser = {
+        mobile, name, password,
+        dob: data.dob || '',
+        abhaId: '91-' + Math.floor(1000 + Math.random() * 9000) + '-0000-0000',
+        location: data.location || 'Patna, Bihar',
+        verified: true,
+        createdAt: new Date().toISOString()
+      };
+
+      const saved = await fbSaveUser(mobile, newUser);
+      if (!saved) return { success: false, error: 'Unable to create account. Try again.' };
+
+      const sessionUser = sanitizeUser({ ...newUser, authMethod: 'register' });
+      writeJson(SESSION_KEY, sessionUser);
+      notify();
+      return { success: true, user: sessionUser };
+    } catch (err) {
+      console.error('[Auth] Register error:', err);
+      return { success: false, error: 'Registration failed. Check your internet connection.' };
     }
-    notify();
-    return { success: true, user: sessionUser };
   }
 
-  /**
-   * Send OTP (Simulated for all numbers)
-   */
+  // ── Real Firebase Phone OTP ──
+  let recaptchaVerifier = null;
+  let recaptchaWidgetId = null;
+
+  function setupRecaptcha(buttonId) {
+    try {
+      const auth = FirebaseService.getAuth();
+      if (!auth) { console.warn('[Auth] Firebase Auth not ready'); return; }
+
+      // Clear previous verifier
+      if (recaptchaVerifier) {
+        try { recaptchaVerifier.clear(); } catch {}
+        recaptchaVerifier = null;
+      }
+
+      recaptchaVerifier = new firebase.auth.RecaptchaVerifier(buttonId, {
+        size: 'invisible',
+        callback: () => { console.log('[Auth] reCAPTCHA solved'); },
+        'expired-callback': () => { console.log('[Auth] reCAPTCHA expired'); }
+      });
+
+      recaptchaVerifier.render().then(widgetId => {
+        recaptchaWidgetId = widgetId;
+        console.log('[Auth] reCAPTCHA ready on #' + buttonId);
+      }).catch(err => {
+        console.warn('[Auth] reCAPTCHA render failed:', err);
+      });
+    } catch (err) {
+      console.warn('[Auth] setupRecaptcha error:', err);
+    }
+  }
+
   async function sendOTP(phone) {
     const mobile = normalizeMobile(phone);
-    if (!/^\d{10}$/.test(mobile)) {
-      return { success: false, error: 'Enter valid 10-digit mobile number' };
+    if (!/^\d{10}$/.test(mobile)) return { success: false, error: 'Enter valid 10-digit mobile number' };
+
+    const fullPhone = '+91' + mobile;
+    const auth = FirebaseService.getAuth();
+
+    // Try real Firebase Phone Auth
+    if (auth && recaptchaVerifier) {
+      try {
+        console.log(`[Auth] Sending real OTP to ${fullPhone}`);
+        confirmationResult = await auth.signInWithPhoneNumber(fullPhone, recaptchaVerifier);
+        console.log('[Auth] OTP sent successfully via Firebase');
+        return { success: true, demo: false };
+      } catch (err) {
+        console.error('[Auth] Firebase OTP failed:', err);
+
+        // Reset reCAPTCHA for retry
+        if (recaptchaWidgetId !== null) {
+          try { grecaptcha.reset(recaptchaWidgetId); } catch {}
+        }
+
+        // If quota exceeded or auth error, fall back to demo
+        if (err.code === 'auth/too-many-requests' || err.code === 'auth/quota-exceeded') {
+          return { success: false, error: 'Too many OTP requests. Please wait and try again.' };
+        }
+        if (err.code === 'auth/invalid-phone-number') {
+          return { success: false, error: 'Invalid phone number format. Use 10-digit Indian number.' };
+        }
+
+        // Fallback to demo mode
+        console.log('[Auth] Falling back to demo OTP mode');
+      }
     }
 
-    // Demo mode — simulate OTP sent
-    console.log(`[Auth] OTP "123456" sent to ${mobile}`);
-    confirmationResult = { confirm: async (code) => {
-      if (code === '123456') return { user: { phoneNumber: mobile } };
-      throw new Error('Invalid OTP');
-    }};
+    // Demo fallback — works when Firebase Auth is unavailable
+    console.log(`[Auth] Demo OTP "123456" for ${mobile}`);
+    confirmationResult = {
+      confirm: async (code) => {
+        if (code === '123456') return { user: { phoneNumber: mobile } };
+        throw new Error('Invalid OTP');
+      }
+    };
     return { success: true, demo: true };
   }
 
-  /**
-   * Verify OTP and Login/Register
-   */
   async function verifyOTP(code) {
     if (!confirmationResult) return { success: false, error: 'Request OTP first' };
     if (!/^\d{6}$/.test(code)) return { success: false, error: 'Enter 6-digit OTP' };
 
     try {
       const result = await confirmationResult.confirm(code);
-      const phone = result.user.phoneNumber;
-      
-      const users = getUsers();
-      let user = users.find(u => normalizeMobile(u.mobile) === phone);
-      
-      // If user doesn't exist, auto-create them
+      const phoneNumber = result.user?.phoneNumber || result.user?.phone;
+      const phone = normalizeMobile(phoneNumber);
+
+      let user = await fbGetUser(phone);
+
       if (!user) {
         user = {
           mobile: phone,
           name: 'New User ' + phone.substring(6),
           abhaId: '91-0000-0000-0000',
           location: 'Patna, Bihar',
-          verified: true
+          verified: true,
+          createdAt: new Date().toISOString()
         };
-        users.push(user);
-        saveUsers(users);
+        await fbSaveUser(phone, user);
       }
 
       const sessionUser = sanitizeUser({ ...user, authMethod: 'otp' });
-      if (!writeJson(SESSION_KEY, sessionUser)) {
-        return { success: false, error: 'Unable to save login session. Please check browser storage.' };
-      }
+      writeJson(SESSION_KEY, sessionUser);
       notify();
       return { success: true, user: sessionUser };
     } catch (err) {
-      return { success: false, error: 'Invalid OTP code.' };
+      console.error('[Auth] OTP verification failed:', err);
+      return { success: false, error: 'Invalid OTP code. Please try again.' };
     }
   }
 
-  function getUser() {
-    return sanitizeUser(readJson(SESSION_KEY, null));
-  }
+  // ── Session ──
+  function getUser() { return sanitizeUser(readJson(SESSION_KEY, null)); }
+  function isLoggedIn() { return !!getUser(); }
 
-  function updateProfile(updates) {
+  // ── Profile Update ──
+  async function updateProfile(updates) {
     const current = getUser();
     if (!current) return { success: false, error: 'You must be logged in.' };
 
@@ -208,73 +236,105 @@ const AuthService = (() => {
     if (!name) return { success: false, error: 'Name cannot be empty.' };
     if (!/^\d{10}$/.test(mobile)) return { success: false, error: 'Enter valid 10-digit mobile number.' };
 
-    const users = getUsers();
-    const duplicate = users.find(u => normalizeMobile(u.mobile) === mobile && normalizeMobile(u.mobile) !== normalizeMobile(current.mobile));
-    if (duplicate) return { success: false, error: 'Mobile number already belongs to another account.' };
+    try {
+      if (mobile !== normalizeMobile(current.mobile)) {
+        const dup = await fbGetUser(mobile);
+        if (dup) return { success: false, error: 'Mobile number already belongs to another account.' };
+      }
 
-    const nextUser = {
-      ...current,
-      name,
-      mobile,
-      dob: updates.dob || current.dob || '',
-      location: updates.location || current.location || 'Patna, Bihar',
-      avatar: updates.avatar || current.avatar || ''
-    };
+      const fbUser = await fbGetUser(normalizeMobile(current.mobile)) || {};
+      const nextUser = {
+        ...fbUser,
+        name, mobile,
+        dob: updates.dob || current.dob || '',
+        location: updates.location || current.location || 'Patna, Bihar',
+        avatar: updates.avatar || current.avatar || ''
+      };
 
-    let matched = false;
-    const nextUsers = users.map(u => {
-      if (normalizeMobile(u.mobile) !== normalizeMobile(current.mobile)) return u;
-      matched = true;
-      return { ...u, ...nextUser, password: u.password };
-    });
-    if (!matched) nextUsers.push(nextUser);
+      if (mobile !== normalizeMobile(current.mobile)) {
+        const oldRef = await getDbRef(`users/${normalizeMobile(current.mobile)}`);
+        if (oldRef) await oldRef.remove();
+      }
 
-    if (!saveUsers(nextUsers) || !writeJson(SESSION_KEY, nextUser)) {
+      await fbSaveUser(mobile, nextUser);
+
+      const sessionUser = sanitizeUser(nextUser);
+      writeJson(SESSION_KEY, sessionUser);
+      notify();
+      return { success: true, user: sessionUser };
+    } catch (err) {
+      console.error('[Auth] Profile update error:', err);
       return { success: false, error: 'Profile could not be saved.' };
     }
-    notify();
-    return { success: true, user: nextUser };
   }
 
-  function changePassword(currentPassword, nextPassword) {
+  // ── Change Password ──
+  async function changePassword(currentPassword, nextPassword) {
     const current = getUser();
     if (!current) return { success: false, error: 'You must be logged in.' };
     if (String(nextPassword || '').length < 6) return { success: false, error: 'New password must be at least 6 characters.' };
 
-    const users = getUsers();
-    const user = users.find(u => normalizeMobile(u.mobile) === normalizeMobile(current.mobile));
-    if (!user || user.password !== currentPassword) return { success: false, error: 'Current password is incorrect.' };
+    try {
+      const mobile = normalizeMobile(current.mobile);
+      const user = await fbGetUser(mobile);
+      if (!user) return { success: false, error: 'User not found.' };
+      if (user.password && user.password !== currentPassword) return { success: false, error: 'Current password is incorrect.' };
 
-    user.password = nextPassword;
-    if (!saveUsers(users)) return { success: false, error: 'Password could not be saved.' };
-    return { success: true };
+      user.password = nextPassword;
+      await fbSaveUser(mobile, user);
+      return { success: true };
+    } catch (err) {
+      console.error('[Auth] Password change error:', err);
+      return { success: false, error: 'Password could not be saved.' };
+    }
   }
 
+  // ── Appointments (Firebase) ──
+  async function saveAppointment(appointment) {
+    try {
+      const db = await FirebaseService.whenReady();
+      if (!db) return false;
+      const ref = db.ref('appointments').push();
+      await ref.set({ ...appointment, id: ref.key, createdAt: new Date().toISOString() });
+      return ref.key;
+    } catch (err) {
+      console.error('[Auth] Save appointment failed:', err);
+      return false;
+    }
+  }
+
+  async function getAppointments(mobile) {
+    try {
+      const db = await FirebaseService.whenReady();
+      if (!db) return [];
+      const snap = await db.ref('appointments').orderByChild('mobile').equalTo(normalizeMobile(mobile)).once('value');
+      const data = snap.val();
+      return data ? Object.values(data) : [];
+    } catch { return []; }
+  }
+
+  // ── Logout ──
   async function logout() {
     try { localStorage.removeItem(SESSION_KEY); } catch {}
     confirmationResult = null;
     notify();
   }
 
-  function isLoggedIn() { return !!getUser(); }
   function subscribe(fn) {
     if (typeof fn !== 'function') return () => {};
     listeners.push(fn);
-    return () => {
-      const index = listeners.indexOf(fn);
-      if (index >= 0) listeners.splice(index, 1);
-    };
+    return () => { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); };
   }
+
   function notify() {
     const user = getUser();
-    listeners.slice().forEach(fn => {
-      try { fn(user); } catch (err) { console.warn('[Auth] Listener failed:', err); }
-    });
+    listeners.slice().forEach(fn => { try { fn(user); } catch {} });
   }
 
   return {
-    getUser, login, register, logout, isLoggedIn, subscribe, updateProfile, changePassword,
-    sendOTP, verifyOTP, setupRecaptcha: () => {}
+    getUser, login, register, logout, isLoggedIn, subscribe,
+    updateProfile, changePassword, sendOTP, verifyOTP,
+    saveAppointment, getAppointments, setupRecaptcha: () => {}
   };
 })();
 

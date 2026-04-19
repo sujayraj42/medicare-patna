@@ -2,7 +2,6 @@
   "appId": "com.medicare.patna",
   "appName": "MediCare",
   "webDir": "public",
-  "bundledWebRuntime": false,
   "server": {
     "androidScheme": "https"
   },

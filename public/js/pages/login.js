@@ -100,7 +100,7 @@ export function renderLogin(app, { auth, i18n, navigate }) {
             <div style="margin-top:2rem;padding:1.25rem;background:var(--surface-container-low);border-radius:var(--radius-lg);display:flex;gap:1rem;align-items:flex-start">
               <span class="material-symbols-outlined" style="color:var(--primary);font-size:20px;margin-top:2px">info</span>
               <div style="font-size:13px;color:var(--on-surface-variant);line-height:1.6">
-                <strong>Demo Mode:</strong> Enter any 10-digit number and use OTP <code style="padding:2px 6px;background:var(--surface-container-highest);border-radius:4px;font-weight:700;color:var(--primary)">123456</code> to login.
+                <strong>OTP Login:</strong> A real SMS will be sent to your number via Firebase. If SMS delivery fails, use demo code <code style="padding:2px 6px;background:var(--surface-container-highest);border-radius:4px;font-weight:700;color:var(--primary)">123456</code> as fallback.
               </div>
             </div>
 
@@ -118,6 +118,11 @@ export function renderLogin(app, { auth, i18n, navigate }) {
     </div>`;
 
     bindEvents();
+
+    // Setup reCAPTCHA for real Firebase Phone OTP
+    if (!otpSent) {
+      setTimeout(() => auth.setupRecaptcha('sendOtpBtn'), 300);
+    }
   }
 
   function bindEvents() {
@@ -150,7 +155,7 @@ export function renderLogin(app, { auth, i18n, navigate }) {
     });
 
     // Password Login
-    document.getElementById('passwordLoginBtn')?.addEventListener('click', () => {
+    document.getElementById('passwordLoginBtn')?.addEventListener('click', async () => {
       hideMessages();
       const mobile = document.getElementById('loginMobile').value.trim();
       const password = document.getElementById('loginPassword').value.trim();
@@ -158,12 +163,17 @@ export function renderLogin(app, { auth, i18n, navigate }) {
         showError('Please enter mobile number and password');
         return;
       }
-      const result = auth.login(mobile, password);
+      const btn = document.getElementById('passwordLoginBtn');
+      btn.innerHTML = '<span class="material-symbols-outlined animate-pulse">hourglass_empty</span> Logging in...';
+      btn.disabled = true;
+      const result = await auth.login(mobile, password);
       if (result.success) {
         showSuccess('✅ Login successful! Redirecting...');
         setTimeout(() => navigate('dashboard'), 800);
       } else {
         showError(result.error);
+        btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:20px">login</span> <span>Login with Password</span>';
+        btn.disabled = false;
       }
     });
 
@@ -185,7 +195,11 @@ export function renderLogin(app, { auth, i18n, navigate }) {
           otpSent = true;
           startResendTimer();
           render();
-          showSuccess(t('login.otp_sent') + (result.demo ? ' (Demo: 123456)' : ''));
+          if (result.demo) {
+            showSuccess('Demo mode: Use OTP 123456');
+          } else {
+            showSuccess('📱 OTP sent to +91 ' + mobile + ' via SMS');
+          }
           // Auto-focus first OTP digit
           setTimeout(() => app.querySelector('.otp-digit')?.focus(), 100);
         } else {

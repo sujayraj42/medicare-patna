@@ -180,13 +180,8 @@ export function renderDashboard(app, { auth, hospitals, i18n, files, notificatio
     }
 
     if (action === 'lab') {
-      notifications.add({
-        type: 'lab',
-        title: 'Lab test reminder prepared',
-        body: 'Upload a doctor prescription or previous lab report so the test request has context.'
-      });
-      showToast('Lab test reminder added.');
-      navigate('vault');
+      sessionStorage.setItem('mc_booking_type', 'lab');
+      navigate('booking');
       return;
     }
 

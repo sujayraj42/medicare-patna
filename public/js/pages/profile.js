@@ -63,9 +63,9 @@ export function renderProfile(app, { auth, notifications, navigate }) {
     </main>
   </div>`;
 
-  document.getElementById('profileForm')?.addEventListener('submit', (e) => {
+  document.getElementById('profileForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const result = auth.updateProfile({
+    const result = await auth.updateProfile({
       name: document.getElementById('profileName').value,
       mobile: document.getElementById('profileMobile').value,
       dob: document.getElementById('profileDob').value,
@@ -86,9 +86,9 @@ export function renderProfile(app, { auth, notifications, navigate }) {
     }
   });
 
-  document.getElementById('passwordForm')?.addEventListener('submit', (e) => {
+  document.getElementById('passwordForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const result = auth.changePassword(
+    const result = await auth.changePassword(
       document.getElementById('currentPassword').value,
       document.getElementById('nextPassword').value
     );

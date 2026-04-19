@@ -32,19 +32,24 @@ export function renderRegister(app, { auth, navigate }) {
     </main>
   </div>`;
 
-  document.getElementById('registerForm').addEventListener('submit', (e) => {
+  document.getElementById('registerForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.innerHTML = '<span class="material-symbols-outlined animate-pulse">hourglass_empty</span> Creating account...';
+    btn.disabled = true;
     const data = { 
       name: document.getElementById('regName').value, 
       mobile: document.getElementById('regMobile').value, 
       dob: document.getElementById('regDob').value,
       password: document.getElementById('regPassword').value
     };
-    const res = auth.register(data);
+    const res = await auth.register(data);
     if (res.success) {
       navigate('dashboard');
     } else {
       alert(res.error || 'Registration failed');
+      btn.innerHTML = 'Register <span class="material-symbols-outlined">arrow_forward</span>';
+      btn.disabled = false;
     }
   });
   document.getElementById('goLogin')?.addEventListener('click', (e) => { e.preventDefault(); navigate('login'); });

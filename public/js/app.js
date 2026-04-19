@@ -3,6 +3,7 @@
  * Uses hash-based routing and Angular Signals-inspired reactive state
  */
 import ErrorHandler from './utils/error-handler.js';
+import FirebaseService from './services/firebase.service.js';
 import HospitalService from './services/hospital.service.js';
 import AuthService from './services/auth.service.js';
 import SyncService from './services/sync.service.js';
@@ -228,5 +229,16 @@ function handleRoute() {
 
 // ── Boot ──
 window.addEventListener('hashchange', handleRoute);
-window.addEventListener('DOMContentLoaded', handleRoute);
-handleRoute();
+
+async function boot() {
+  const appEl = document.getElementById('app');
+  if (appEl) {
+    appEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:1rem"><span class="material-symbols-outlined" style="font-size:3rem;color:var(--primary-container);animation:pulse 1.5s ease infinite">local_hospital</span><p style="color:var(--on-surface-variant);font-weight:600">Loading MediCare...</p></div>';
+  }
+  await FirebaseService.readyPromise;
+  await HospitalService.init();
+  handleRoute();
+}
+
+window.addEventListener('DOMContentLoaded', boot);
+boot();
