@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="description" content="MediCare — Patna's premier digital health ecosystem. Book appointments, manage medical records, and access emergency services across AIIMS, Paras HMRI, Big Apollo, IGIMS, and PMCH.">
+  <meta name="theme-color" content="#0056b3">
+  <title>MediCare — Patna Health Ecosystem</title>
+
+  <!-- PWA & Icons -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MediCare">
+  <meta name="mobile-web-app-capable" content="yes">
+
+  <!-- Fonts: Inter + Noto Sans Devanagari for Hindi -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Design System -->
+  <link rel="stylesheet" href="css/variables.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+
+  <style>
+    /* ── OTP Digit Boxes ── */
+    .otp-digit:focus { box-shadow: 0 0 0 2px rgba(0, 86, 179, 0.3) !important; background: var(--surface-container-lowest) !important; }
+    @keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+
+    /* ── Hindi Typography ── */
+    .hindi { font-family: 'Noto Sans Devanagari', 'Inter', sans-serif !important; }
+
+    /* ── Capacitor Safe Areas ── */
+    body { padding-top: env(safe-area-inset-top); }
+    .bottom-nav { padding-bottom: calc(1rem + env(safe-area-inset-bottom)); }
+
+    /* ── Login Page ── */
+    .login-page { min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 0; }
+    .login-container { width: 100%; max-width: 1200px; display: grid; grid-template-columns: 1fr; min-height: 100dvh; }
+    .login-brand { display: none; position: relative; flex-direction: column; justify-content: space-between; padding: 3rem; overflow: hidden; background: var(--primary); }
+    .login-brand-bg { position: absolute; inset: 0; opacity: 0.2; background: linear-gradient(135deg, var(--primary-container), var(--primary)); }
+    .login-brand-content { position: relative; z-index: 1; display: flex; flex-direction: column; justify-content: space-between; height: 100%; }
+    .login-brand-content h1 { font-size: clamp(2rem, 4vw, 3rem); font-weight: 900; color: white; line-height: 1.1; letter-spacing: -0.02em; margin-top: auto; margin-bottom: 1.5rem; }
+    .login-brand-content p { color: var(--on-primary-container); font-size: 1.1rem; max-width: 24rem; line-height: 1.6; opacity: 0.9; }
+    .login-badges { display: flex; gap: 1rem; margin-top: 2rem; }
+    .login-badges span { background: rgba(255,255,255,0.1); backdrop-filter: blur(12px); padding: 0.5rem 1rem; border-radius: var(--radius-sm); border: 1px solid rgba(255,255,255,0.1); font-size: 11px; font-weight: 600; color: white; text-transform: uppercase; letter-spacing: 0.08em; }
+    .login-form-area { display: flex; flex-direction: column; justify-content: center; padding: 2rem; background: var(--surface-container-lowest); }
+    .login-mobile-logo { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 3rem; }
+    .login-form-wrap { max-width: 400px; width: 100%; margin: 0 auto; }
+    .login-form-wrap h2 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 0.5rem; }
+    .login-form-wrap form { margin-top: 2rem; display: flex; flex-direction: column; gap: 1.5rem; }
+
+    @media (min-width: 768px) {
+      .login-container { grid-template-columns: 1fr 1fr; min-height: 700px; max-height: 900px; background: var(--surface-container-low); border-radius: var(--radius-2xl); overflow: hidden; box-shadow: var(--shadow-lg); margin: 2rem; }
+      .login-brand { display: flex; }
+      .login-mobile-logo { display: none; }
+      .login-form-area { padding: 3rem 4rem; }
+      .login-page { padding: 2rem; }
+    }
+
+    /* ── Register Page ── */
+    .register-page { min-height: 100dvh; display: flex; flex-direction: column; }
+    .reg-hero { display: none; }
+    @media (min-width: 768px) {
+      .reg-grid { grid-template-columns: 1fr 1fr !important; }
+      .reg-hero { display: block !important; }
+    }
+    @media (max-width: 640px) {
+      .reg-row { grid-template-columns: 1fr !important; }
+    }
+
+    /* ── Dashboard ── */
+    @media (min-width: 768px) {
+      .dash-grid { grid-template-columns: 1fr 2fr !important; }
+    }
+    .quick-action {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 1rem; border-radius: var(--radius-xl);
+      background: var(--surface-container-low); cursor: pointer;
+      transition: all var(--transition-smooth); text-align: center;
+    }
+    .quick-action:hover { background: var(--primary-fixed); }
+    .quick-action:hover .material-symbols-outlined { transform: scale(1.1); }
+    .quick-action:active { transform: scale(0.95); }
+
+    /* ── Vault ── */
+    @media (max-width: 640px) {
+      .vault-search-grid { grid-template-columns: 1fr !important; }
+      .vault-search-label { display: none; }
+    }
+
+    /* ── Ayushman ── */
+    @media (min-width: 768px) {
+      .abha-cards-grid { grid-template-columns: 1fr 1fr !important; }
+      .abha-benefits-grid { grid-template-columns: 2fr 1fr !important; }
+      .abha-hero-icon { display: block !important; }
+    }
+
+    /* ── Booking ── */
+    @media (max-width: 480px) {
+      .booking-selects { grid-template-columns: 1fr !important; }
+    }
+
+    /* ── Hindi Font Support ── */
+    .hindi { font-family: 'Noto Sans Devanagari', var(--font-family); }
+  </style>
+</head>
+<body>
+  <!-- Offline Banner -->
+  <div class="offline-banner" id="offline-banner">
+    <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">wifi_off</span>
+    You're offline — actions will sync when connection restores.
+  </div>
+
+  <!-- App Shell -->
+  <div id="app"></div>
+
+  <!-- Global Toast -->
+  <div class="toast" id="global-toast"></div>
+
+  <!-- App Entry -->
+  <script type="module" src="js/app.js"></script>
+  
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(err => {
+          console.warn('SW registration failed: ', err);
+        });
+      });
+    }
+  </script>
+</body>
+</html>

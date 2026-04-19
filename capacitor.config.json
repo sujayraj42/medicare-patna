@@ -1,0 +1,38 @@
+{
+  "appId": "com.medicare.patna",
+  "appName": "MediCare",
+  "webDir": "public",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "launchAutoHide": true,
+      "backgroundColor": "#003f87",
+      "androidSplashResourceName": "splash",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#003f87"
+    },
+    "Geolocation": {
+      "permissions": ["location", "coarseLocation"]
+    },
+    "Camera": {
+      "permissions": ["camera", "photos"]
+    },
+    "Filesystem": {
+      "permissions": ["publicStorage"]
+    }
+  },
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": true,
+    "minSdkVersion": 23,
+    "targetSdkVersion": 34
+  }
+}
